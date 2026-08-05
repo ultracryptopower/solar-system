@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: solar-system
+  namespace: solar-system
+  labels:
+    app: solar-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: solar-system
+  template:
+    metadata:
+      labels:
+        app: solar-system
+    spec:
+      containers:
+      - name: solar-system
+        image: ziyadtarek99/solar-system:v1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        envFrom:
+        - secretRef:
+            name: mongo-db-creds
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 20

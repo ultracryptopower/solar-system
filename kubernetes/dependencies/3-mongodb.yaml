@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: solar-system
+  labels:
+    app: mongodb
+spec:
+  ports:
+  - port: 27017
+    name: mongo
+  selector:
+    app: mongodb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: solar-system
+spec:
+  serviceName: mongodb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7
+        ports:
+        - containerPort: 27017
+          name: mongo
+        envFrom:
+        - secretRef:
+            name: mongodb-root
+        volumeMounts:
+        - name: data
+          mountPath: /data/db
+        - name: seed
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: seed
+        configMap:
+          name: mongodb-seed
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: local-path
+      resources:
+        requests:
+          storage: 2Gi

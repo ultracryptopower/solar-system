@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: solar-system
+  namespace: solar-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - solar-system.randomitilabs.dpdns.org
+    secretName: solar-system-tls
+  rules:
+  - host: solar-system.randomitilabs.dpdns.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: solar-system
+            port:
+              number: 3000

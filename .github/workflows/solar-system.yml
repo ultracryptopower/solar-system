@@ -1,33 +1,133 @@
-name: Solar System Workflow
+name: Solar System CI/CD
 
-on: 
+on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - 'feature/*'
-    
-jobs:
-    unit-testing:
-        name: Unit Testing
-        runs-on: ubuntu-latest
-        steps:
-        - name: Checkout Repository
-          uses: actions/checkout@v4
 
-        - name: Setup NodeJS Version
-          uses: actions/setup-node@v3
-          with:
-            node-version: 20
-    
-        - name: Install Dependencies
-          run: npm install
-    
-        - name: Unit Testing
-          run: npm test
-          
-        - name: Archive Test Result
-          uses: actions/upload-artifact@v3
-          with:
-            name: Mocha-Test-Result
-            path: test-results.xml
+env:
+  IMAGE_NAME: ziyadtarek99/solar-system
+  MONGO_URI: mongodb://localhost:27017/solar-system?authSource=admin
+  MONGO_USERNAME: admin
+  MONGO_PASSWORD: password
+  NODE_ENV: test
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: password
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh -u admin -p password --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Seed MongoDB
+        run: |
+          node <<'EOF'
+          const mongoose = require('mongoose');
+          mongoose.connect(process.env.MONGO_URI, {
+            user: process.env.MONGO_USERNAME,
+            pass: process.env.MONGO_PASSWORD,
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+          }).then(async () => {
+            const planets = mongoose.connection.collection('planets');
+            await planets.deleteMany({});
+            await planets.insertMany([
+              { id: 1, name: 'Mercury' },
+              { id: 2, name: 'Venus' },
+              { id: 3, name: 'Earth' },
+              { id: 4, name: 'Mars' },
+              { id: 5, name: 'Jupiter' },
+              { id: 6, name: 'Saturn' },
+              { id: 7, name: 'Uranus' },
+              { id: 8, name: 'Neptune' },
+            ]);
+            await mongoose.disconnect();
+          }).catch((err) => { console.error(err); process.exit(1); });
+          EOF
+
+      - name: Unit Testing
+        run: npm test
+        env:
+          MOCHA_FILE: test-results.xml
+
+      - name: Code Coverage
+        run: npm run coverage
+        continue-on-error: true
+
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            test-results.xml
+            coverage/
+          if-no-files-found: warn
+
+  build:
+    name: Build & Push
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update image tag
+        run: |
+          sed -i "s|image: ziyadtarek99/solar-system:.*|image: ziyadtarek99/solar-system:${{ github.sha }}|" \
+            kubernetes/0-deployment.yaml
+
+      - name: kubectl apply
+        run: |
+          kubectl apply -f kubernetes/0-deployment.yaml
+          kubectl apply -f kubernetes/1-service.yaml
+          kubectl apply -f kubernetes/2-ingress.yaml
+          kubectl rollout status deployment/solar-system -n solar-system --timeout=180s
