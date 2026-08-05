@@ -33,93 +33,93 @@ env:
   NODE_ENV: test
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Job 1: Tests — unit tests + coverage + upload artifacts
-  # ---------------------------------------------------------------------------
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
+  # # ---------------------------------------------------------------------------
+  # # Job 1: Tests — unit tests + coverage + upload artifacts
+  # # ---------------------------------------------------------------------------
+  # tests:
+  #   name: Tests
+  #   runs-on: ubuntu-latest
 
-    # Sidecar MongoDB for this job only (NOT the cluster MongoDB).
-    # App tests need a real DB with planet documents.
-    services:
-      mongodb:
-        image: mongo:7
-        env:
-          MONGO_INITDB_ROOT_USERNAME: admin
-          MONGO_INITDB_ROOT_PASSWORD: password
-        ports:
-          - 27017:27017
-        # Wait until mongod accepts connections before steps start
-        options: >-
-          --health-cmd "mongosh -u admin -p password --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+  #   # Sidecar MongoDB for this job only (NOT the cluster MongoDB).
+  #   # App tests need a real DB with planet documents.
+  #   services:
+  #     mongodb:
+  #       image: mongo:7
+  #       env:
+  #         MONGO_INITDB_ROOT_USERNAME: admin
+  #         MONGO_INITDB_ROOT_PASSWORD: password
+  #       ports:
+  #         - 27017:27017
+  #       # Wait until mongod accepts connections before steps start
+  #       options: >-
+  #         --health-cmd "mongosh -u admin -p password --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 })'"
+  #         --health-interval 10s
+  #         --health-timeout 5s
+  #         --health-retries 10
 
-    steps:
-      # Clone this repo onto the runner
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     # Clone this repo onto the runner
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      # Install Node.js (same major version students use locally)
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm   # speed up npm ci using GitHub's dependency cache
+  #     # Install Node.js (same major version students use locally)
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm   # speed up npm ci using GitHub's dependency cache
 
-      # Clean install from package-lock.json (reproducible builds)
-      - name: Install npm dependencies
-        run: npm ci
+  #     # Clean install from package-lock.json (reproducible builds)
+  #     - name: Install npm dependencies
+  #       run: npm ci
 
-      # Insert planet rows so /planet tests can assert names (Mercury, Earth, …)
-      - name: Seed MongoDB
-        run: |
-          node <<'EOF'
-          const mongoose = require('mongoose');
-          mongoose.connect(process.env.MONGO_URI, {
-            user: process.env.MONGO_USERNAME,
-            pass: process.env.MONGO_PASSWORD,
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-          }).then(async () => {
-            const planets = mongoose.connection.collection('planets');
-            await planets.deleteMany({});
-            await planets.insertMany([
-              { id: 1, name: 'Mercury' },
-              { id: 2, name: 'Venus' },
-              { id: 3, name: 'Earth' },
-              { id: 4, name: 'Mars' },
-              { id: 5, name: 'Jupiter' },
-              { id: 6, name: 'Saturn' },
-              { id: 7, name: 'Uranus' },
-              { id: 8, name: 'Neptune' },
-            ]);
-            await mongoose.disconnect();
-          }).catch((err) => { console.error(err); process.exit(1); });
-          EOF
-      # mocha + mocha-junit-reporter → test-results.xml (see package.json "test")
-      - name: Unit Testing
-        run: npm test
-        env:
-          MOCHA_FILE: test-results.xml
+  #     # Insert planet rows so /planet tests can assert names (Mercury, Earth, …)
+  #     - name: Seed MongoDB
+  #       run: |
+  #         node <<'EOF'
+  #         const mongoose = require('mongoose');
+  #         mongoose.connect(process.env.MONGO_URI, {
+  #           user: process.env.MONGO_USERNAME,
+  #           pass: process.env.MONGO_PASSWORD,
+  #           useNewUrlParser: true,
+  #           useUnifiedTopology: true,
+  #         }).then(async () => {
+  #           const planets = mongoose.connection.collection('planets');
+  #           await planets.deleteMany({});
+  #           await planets.insertMany([
+  #             { id: 1, name: 'Mercury' },
+  #             { id: 2, name: 'Venus' },
+  #             { id: 3, name: 'Earth' },
+  #             { id: 4, name: 'Mars' },
+  #             { id: 5, name: 'Jupiter' },
+  #             { id: 6, name: 'Saturn' },
+  #             { id: 7, name: 'Uranus' },
+  #             { id: 8, name: 'Neptune' },
+  #           ]);
+  #           await mongoose.disconnect();
+  #         }).catch((err) => { console.error(err); process.exit(1); });
+  #         EOF
+  #     # mocha + mocha-junit-reporter → test-results.xml (see package.json "test")
+  #     - name: Unit Testing
+  #       run: npm test
+  #       env:
+  #         MOCHA_FILE: test-results.xml
 
-      # nyc coverage report (does not fail the job if threshold is missed)
-      - name: Code Coverage
-        run: npm run coverage
-        continue-on-error: true
+  #     # nyc coverage report (does not fail the job if threshold is missed)
+  #     - name: Code Coverage
+  #       run: npm run coverage
+  #       continue-on-error: true
 
-      # Keep JUnit + coverage files downloadable from the Actions UI
-      - name: Upload Test Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-artifacts
-          path: |
-            test-results.xml
-            coverage/
-          if-no-files-found: warn
+  #     # Keep JUnit + coverage files downloadable from the Actions UI
+  #     - name: Upload Test Artifacts
+  #       if: always()
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: test-artifacts
+  #         path: |
+  #           test-results.xml
+  #           coverage/
+  #         if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
   # Job 2: Build — Docker image → Docker Hub
@@ -133,6 +133,8 @@ jobs:
       
       - name: build and push custome action 
         uses: ziyad-tarek1/iti-action/@v1
+        with: 
+         dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # - name: Checkout code
       #   uses: actions/checkout@v4
@@ -162,40 +164,41 @@ jobs:
   # Prerequisite (cluster admin, once):
   #   make deploy-deps   # namespace + MongoDB from kubernetes/dependencies/
   # ---------------------------------------------------------------------------
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+
+#   deploy:
+#     name: Deploy
+#     needs: build
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
 
 
-##  set up kubernteste cluster authentication action
+# ##  set up kubernteste cluster authentication action
 
-      # Install kubectl CLI on the runner
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+#       # Install kubectl CLI on the runner
+#       - name: Setup kubectl
+#         uses: azure/setup-kubectl@v4
 
-      # Write the cluster credentials from a GitHub secret (never commit kubeconfig)
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p ~/.kube 
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config 
+#       # Write the cluster credentials from a GitHub secret (never commit kubeconfig)
+#       - name: Configure kubeconfig
+#         run: |
+#           mkdir -p ~/.kube 
+#           echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+#           chmod 600 ~/.kube/config 
 
 
 
-      # Point the Deployment at the image we just pushed (commit SHA tag)
-      - name: Update image tag in deployment
-        run: |
-          sed -i "s|image: ziyadtarek99/solar-system:.*|image: ziyadtarek99/solar-system:${{ github.sha }}|" \
-            kubernetes/0-deployment.yaml
+#       # Point the Deployment at the image we just pushed (commit SHA tag)
+#       - name: Update image tag in deployment
+#         run: |
+#           sed -i "s|image: ziyadtarek99/solar-system:.*|image: ziyadtarek99/solar-system:${{ github.sha }}|" \
+#             kubernetes/0-deployment.yaml
 
-      # App only — does NOT apply kubernetes/dependencies/ (Mongo is admin setup)
-      - name: kubectl apply (app)
-        run: |
-          kubectl apply -f kubernetes/0-deployment.yaml
-          kubectl apply -f kubernetes/1-service.yaml
-          kubectl apply -f kubernetes/2-ingress.yaml
-          kubectl rollout status deployment/solar-system -n solar-system --timeout=180s
+#       # App only — does NOT apply kubernetes/dependencies/ (Mongo is admin setup)
+#       - name: kubectl apply (app)
+#         run: |
+#           kubectl apply -f kubernetes/0-deployment.yaml
+#           kubectl apply -f kubernetes/1-service.yaml
+#           kubectl apply -f kubernetes/2-ingress.yaml
+#           kubectl rollout status deployment/solar-system -n solar-system --timeout=180s
