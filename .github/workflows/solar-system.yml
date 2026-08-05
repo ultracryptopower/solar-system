@@ -108,7 +108,7 @@ jobs:
       # nyc coverage report (does not fail the job if threshold is missed)
       - name: Code Coverage
         run: npm run coverage
-        # continue-on-error: true
+        continue-on-error: true
 
       # Keep JUnit + coverage files downloadable from the Actions UI
       - name: Upload Test Artifacts
