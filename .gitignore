@@ -5,6 +5,7 @@ solar-system.png
 coverage
 test-results.xml
 
+.DS_Store
 # Logs
 logs
 *.log

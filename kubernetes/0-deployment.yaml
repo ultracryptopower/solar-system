@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: solar-system
-        image: ziyadtarek99/solar-system:v1
+        image: ziyadtarek99/solar-system:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

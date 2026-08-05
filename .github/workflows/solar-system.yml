@@ -99,7 +99,6 @@ jobs:
             await mongoose.disconnect();
           }).catch((err) => { console.error(err); process.exit(1); });
           EOF
-
       # mocha + mocha-junit-reporter → test-results.xml (see package.json "test")
       - name: Unit Testing
         run: npm test
@@ -109,10 +108,9 @@ jobs:
       # nyc coverage report (does not fail the job if threshold is missed)
       - name: Code Coverage
         run: npm run coverage
-        continue-on-error: true
+        # continue-on-error: true
 
       # Keep JUnit + coverage files downloadable from the Actions UI
-      # if: always() → upload even when a previous step failed
       - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -169,6 +167,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+
+##  set up kubernteste cluster authentication action
+
       # Install kubectl CLI on the runner
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -176,9 +177,11 @@ jobs:
       # Write the cluster credentials from a GitHub secret (never commit kubeconfig)
       - name: Configure kubeconfig
         run: |
-          mkdir -p ~/.kube
+          mkdir -p ~/.kube 
           echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config
+          chmod 600 ~/.kube/config 
+
+
 
       # Point the Deployment at the image we just pushed (commit SHA tag)
       - name: Update image tag in deployment
