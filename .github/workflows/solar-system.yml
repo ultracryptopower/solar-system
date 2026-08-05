@@ -1,11 +1,30 @@
+# =============================================================================
+# Solar System — GitHub Actions CI/CD (student lab)
+# =============================================================================
+# Flow:  tests  →  build & push image  →  deploy app to Kubernetes
+#
+# NOT in this pipeline (cluster admin, one time):
+#   make deploy-deps
+#   → applies kubernetes/dependencies/ (namespace, secrets, MongoDB + seed)
+#
+# Repo settings required:
+#   vars.DOCKERHUB_USERNAME   — Docker Hub username
+#   secrets.DOCKERHUB_TOKEN   — Docker Hub access token
+#   secrets.KUBECONFIG        — raw kubeconfig for the target cluster
+# =============================================================================
+
 name: Solar System CI/CD
 
+# When this workflow runs
 on:
+  # Manual run from the Actions tab (useful for demos / re-deploys)
   workflow_dispatch:
+  # Automatic run on every push to main
   push:
     branches:
       - main
 
+# Shared env for all jobs (tests use MONGO_* against the Actions service container)
 env:
   IMAGE_NAME: ziyadtarek99/solar-system
   MONGO_URI: mongodb://localhost:27017/solar-system?authSource=admin
@@ -14,9 +33,15 @@ env:
   NODE_ENV: test
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Tests — unit tests + coverage + upload artifacts
+  # ---------------------------------------------------------------------------
   tests:
     name: Tests
     runs-on: ubuntu-latest
+
+    # Sidecar MongoDB for this job only (NOT the cluster MongoDB).
+    # App tests need a real DB with planet documents.
     services:
       mongodb:
         image: mongo:7
@@ -25,21 +50,30 @@ jobs:
           MONGO_INITDB_ROOT_PASSWORD: password
         ports:
           - 27017:27017
+        # Wait until mongod accepts connections before steps start
         options: >-
           --health-cmd "mongosh -u admin -p password --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 })'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    steps:
+      # Clone this repo onto the runner
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Node.js (same major version students use locally)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          cache: npm   # speed up npm ci using GitHub's dependency cache
 
-      - run: npm ci
+      # Clean install from package-lock.json (reproducible builds)
+      - name: Install npm dependencies
+        run: npm ci
 
+      # Insert planet rows so /planet tests can assert names (Mercury, Earth, …)
       - name: Seed MongoDB
         run: |
           node <<'EOF'
@@ -66,15 +100,19 @@ jobs:
           }).catch((err) => { console.error(err); process.exit(1); });
           EOF
 
+      # mocha + mocha-junit-reporter → test-results.xml (see package.json "test")
       - name: Unit Testing
         run: npm test
         env:
           MOCHA_FILE: test-results.xml
 
+      # nyc coverage report (does not fail the job if threshold is missed)
       - name: Code Coverage
         run: npm run coverage
         continue-on-error: true
 
+      # Keep JUnit + coverage files downloadable from the Actions UI
+      # if: always() → upload even when a previous step failed
       - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,47 +123,71 @@ jobs:
             coverage/
           if-no-files-found: warn
 
+  # ---------------------------------------------------------------------------
+  # Job 2: Build — Docker image → Docker Hub
+  # needs: tests  → only build if tests passed
+  # ---------------------------------------------------------------------------
   build:
     name: Build & Push
     needs: tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: docker/login-action@v4
+      # Authenticate so we can push to ziyadtarek99/*
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - uses: docker/setup-buildx-action@v4
+      # Buildx = modern docker build (BuildKit) on the runner
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - uses: docker/build-push-action@v7
+      # Tag with the git commit SHA so every deploy is traceable
+      - name: Build and push image
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+  # ---------------------------------------------------------------------------
+  # Job 3: Deploy — sed image tag, kubectl apply app manifests only
+  # needs: build → only deploy after the image exists on Docker Hub
+  #
+  # Prerequisite (cluster admin, once):
+  #   make deploy-deps   # namespace + MongoDB from kubernetes/dependencies/
+  # ---------------------------------------------------------------------------
   deploy:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: azure/setup-kubectl@v4
+      # Install kubectl CLI on the runner
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
 
+      # Write the cluster credentials from a GitHub secret (never commit kubeconfig)
       - name: Configure kubeconfig
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
           chmod 600 ~/.kube/config
 
-      - name: Update image tag
+      # Point the Deployment at the image we just pushed (commit SHA tag)
+      - name: Update image tag in deployment
         run: |
           sed -i "s|image: ziyadtarek99/solar-system:.*|image: ziyadtarek99/solar-system:${{ github.sha }}|" \
             kubernetes/0-deployment.yaml
 
-      - name: kubectl apply
+      # App only — does NOT apply kubernetes/dependencies/ (Mongo is admin setup)
+      - name: kubectl apply (app)
         run: |
           kubectl apply -f kubernetes/0-deployment.yaml
           kubectl apply -f kubernetes/1-service.yaml
