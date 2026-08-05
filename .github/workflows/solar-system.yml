@@ -130,27 +130,30 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      
+      - name: build and push custome action 
+        uses: ziyad-tarek1/iti-action/@v1
 
-      # Authenticate so we can push to ziyadtarek99/*
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # - name: Checkout code
+      #   uses: actions/checkout@v4
+      # # Authenticate so we can push to ziyadtarek99/*
+      # - name: Login to Docker Hub
+      #   uses: docker/login-action@v4
+      #   with:
+      #     username: ${{ vars.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Buildx = modern docker build (BuildKit) on the runner
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      # # Buildx = modern docker build (BuildKit) on the runner
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@v4
 
-      # Tag with the git commit SHA so every deploy is traceable
-      - name: Build and push image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+      # # Tag with the git commit SHA so every deploy is traceable
+      # - name: Build and push image
+      #   uses: docker/build-push-action@v7
+      #   with:
+      #     context: .
+      #     push: true
+      #     tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   # ---------------------------------------------------------------------------
   # Job 3: Deploy — sed image tag, kubectl apply app manifests only
