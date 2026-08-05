@@ -7,6 +7,8 @@ const app = express();
 const cors = require('cors')
 
 
+
+
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '/')));
 app.use(cors())
