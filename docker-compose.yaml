@@ -1,27 +1,35 @@
+# Local lab DB stack — seed planets via mongo-express UI (data/planets.json)
+#   make local-db
+#   → http://localhost:30081  (mongoexpressuser / mongoexpresspass)
+#   → Create DB "solar-system", collection "planets", Import File → data/planets.json
+# App (separate): make local-app   OR   cp .env.example .env && npm start
+
 services:
   mongo:
-    image: mongo
+    image: mongo:7
     restart: always
     ports:
       - 27017:27017
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
-
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "admin", "-p", "password", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 40s
 
   mongo-express:
-    image: mongo-express
+    image: mongo-express:1.0.2-20
     restart: always
     ports:
       - 30081:8081
+    depends_on:
+      mongo:
+        condition: service_healthy
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://admin:password@mongo:27017/
-      ME_CONFIG_BASICAUTH_ENABLED: true
+      ME_CONFIG_BASICAUTH_ENABLED: "true"
       ME_CONFIG_BASICAUTH_USERNAME: mongoexpressuser
       ME_CONFIG_BASICAUTH_PASSWORD: mongoexpresspass

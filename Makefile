@@ -1,4 +1,4 @@
-# Solar System — build, push, deploy on k3s (visora)
+# Solar System — local + k3s lab helpers
 
 REGISTRY   ?= ziyadtarek99
 IMAGE      ?= solar-system
@@ -17,26 +17,46 @@ FULL_IMAGE = $(REGISTRY)/$(IMAGE):$(TAG)
 K8S_DIR = kubernetes
 DEPS_DIR = $(K8S_DIR)/dependencies
 
-.PHONY: help build push build-push deploy-deps deploy-manifests deploy status wait test test-ingress logs undeploy clean
+.PHONY: help local-db local-db-down local-app build push build-push deploy-deps deploy-manifests deploy status wait test test-ingress logs undeploy clean
 
 help:
-	@echo "Solar System Kubernetes lab"
+	@echo "Solar System lab"
 	@echo ""
-	@echo "  make deploy-deps        One-time: namespace + MongoDB (cluster admin)"
-	@echo "  make build              Build $(FULL_IMAGE)"
-	@echo "  make push               Push image to Docker Hub"
-	@echo "  make build-push         Build and push"
-	@echo "  make deploy-manifests   Apply app manifests only (0-2)"
-	@echo "  make deploy             Build, push, and deploy app"
-	@echo "  make status             Show resources in $(NAMESPACE)"
-	@echo "  make wait               Wait until app is ready"
-	@echo "  make test               Smoke-test via NodePort $(NODE_PORT)"
-	@echo "  make test-ingress       Smoke-test https://$(HOST)"
-	@echo "  make logs               Tail app logs"
-	@echo "  make undeploy           Delete app resources (keeps MongoDB)"
-	@echo "  make clean              Delete namespace $(NAMESPACE) + local image"
+	@echo "Local:"
+	@echo "  make local-db           Start MongoDB + mongo-express (seed via UI :30081)"
+	@echo "  make local-db-down      Stop local DB stack"
+	@echo "  make local-app          Build Dockerfile and run app → host MongoDB"
 	@echo ""
-	@echo "Variables: REGISTRY=$(REGISTRY) TAG=$(TAG) KUBECONFIG=$(KUBECONFIG)"
+	@echo "Cluster (KUBECONFIG=$(KUBECONFIG)):"
+	@echo "  make deploy-deps        One-time: namespace + secrets + MongoDB seed"
+	@echo "  make build / push       Docker image $(FULL_IMAGE)"
+	@echo "  make deploy-manifests   Apply app only (0-2) — same as CI"
+	@echo "  make deploy             Build, push, deploy app"
+	@echo "  make status | wait | test | test-ingress | logs"
+	@echo "  make undeploy           Delete app (keeps MongoDB)"
+	@echo "  make clean              Delete namespace $(NAMESPACE)"
+
+# --- Local (docker-compose Mongo + app container) ---
+
+local-db:
+	docker compose up -d
+	@echo "MongoDB:       localhost:27017  (admin/password)"
+	@echo "mongo-express: http://localhost:30081  (mongoexpressuser/mongoexpresspass)"
+	@echo "Seed: create DB solar-system → collection planets → import data/planets.json"
+
+local-db-down:
+	docker compose down
+
+local-app:
+	$(DOCKER) build --platform $(BUILD_PLATFORM) -t solar-system:local .
+	$(DOCKER) run --rm -p 3000:3000 \
+		-e MONGO_URI='mongodb://host.docker.internal:27017/solar-system?authSource=admin' \
+		-e MONGO_USERNAME=admin \
+		-e MONGO_PASSWORD=password \
+		-e NODE_ENV=development \
+		solar-system:local
+
+# --- Image ---
 
 build:
 	$(DOCKER) build --platform $(BUILD_PLATFORM) -t $(FULL_IMAGE) .
@@ -46,12 +66,14 @@ push:
 
 build-push: build push
 
-# Cluster admin — run once per cluster/lab
+# --- Cluster admin (once) ---
+
 deploy-deps:
 	$(KUBECTL) apply -f $(DEPS_DIR)/
 	$(KUBECTL) wait --for=condition=ready pod -l app=mongodb -n $(NAMESPACE) --timeout=180s
 
-# App only (CI/CD applies these)
+# --- App only (CI applies these) ---
+
 deploy-manifests:
 	$(KUBECTL) apply -f $(K8S_DIR)/0-deployment.yaml
 	$(KUBECTL) apply -f $(K8S_DIR)/1-service.yaml
@@ -92,4 +114,4 @@ undeploy:
 clean: undeploy
 	-$(KUBECTL) delete namespace $(NAMESPACE) --ignore-not-found
 	$(KUBECTL) wait --for=delete namespace/$(NAMESPACE) --timeout=120s 2>/dev/null || true
-	-$(DOCKER) rmi $(FULL_IMAGE) 2>/dev/null
+	-$(DOCKER) rmi $(FULL_IMAGE) 2>/dev/null || true
