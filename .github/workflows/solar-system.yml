@@ -1,175 +1,37 @@
-# =============================================================================
-# Solar System — GitHub Actions CI/CD (student lab)
-# =============================================================================
-# Flow:  tests  →  build & push image  →  deploy app to Kubernetes
-#
-# NOT in this pipeline (cluster admin, one time):
-#   make deploy-deps
-#   → applies kubernetes/dependencies/ (namespace, secrets, MongoDB + seed)
-#
-# Repo settings required:
-#   vars.DOCKERHUB_USERNAME   — Docker Hub username
-#   secrets.DOCKERHUB_TOKEN   — Docker Hub access token
-#   secrets.KUBECONFIG        — raw kubeconfig for the target cluster
-# =============================================================================
-
-name: Solar System CI/CD
+name: Solar System Workflow
 
 on:
-
   workflow_dispatch:
-   push:
-     branches:
-       - main
-     paths-ignore:
-       - README.md
-       - .github/**
-       - .gitignore
+  push:
+    branches:
+      - main
+      - 'feature/*'
+  pull_request:
+    branches:
+      - main
 
-# workflow variables
 env:
-  IMAGE_NAME: ziyadtarek99/solar-system
-  MONGO_URI: mongodb://localhost:27017/solar-system?authSource=admin
-  MONGO_USERNAME: admin
-  MONGO_PASSWORD: password
-  NODE_ENV: test
+  MONGO_URI: 'mongodb+srv://supercluster.d3jj.mongodb.net/superData'
+  MONGO_USERNAME: ${{ vars.MONGO_USERNAME }}
+  MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Job 1: Tests — unit tests + coverage + upload artifacts
-  # ---------------------------------------------------------------------------
-  tests:
-    name: Tests
+  unit-testing:
+    name: Unit Testing
     runs-on: ubuntu-latest
 
-    # Sidecar MongoDB for this job only (NOT the cluster MongoDB).
-    services:
-      mongodb:
-        image: mongo:7
-        env:
-          MONGO_INITDB_ROOT_USERNAME: admin
-          MONGO_INITDB_ROOT_PASSWORD: password
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh -u admin -p password --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v3
         with:
-          node-version: 20
-          cache: npm
+          node-version: 18
+          cache: 'npm'
 
-      - name: Install npm dependencies
-        run: npm ci
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Seed MongoDB
-        run: |
-          node <<'EOF'
-          const mongoose = require('mongoose');
-          mongoose.connect(process.env.MONGO_URI, {
-            user: process.env.MONGO_USERNAME,
-            pass: process.env.MONGO_PASSWORD,
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-          }).then(async () => {
-            const planets = mongoose.connection.collection('planets');
-            await planets.deleteMany({});
-            await planets.insertMany([
-              { id: 1, name: 'Mercury' },
-              { id: 2, name: 'Venus' },
-              { id: 3, name: 'Earth' },
-              { id: 4, name: 'Mars' },
-              { id: 5, name: 'Jupiter' },
-              { id: 6, name: 'Saturn' },
-              { id: 7, name: 'Uranus' },
-              { id: 8, name: 'Neptune' },
-            ]);
-            await mongoose.disconnect();
-          }).catch((err) => { console.error(err); process.exit(1); });
-          EOF
-
-      - name: Unit Testing
+      - name: Run Unit Tests
         run: npm test
-        env:
-          MOCHA_FILE: test-results.xml
-
-      - name: Code Coverage
-        run: npm run coverage
-        continue-on-error: true
-
-      - name: Upload Test Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-artifacts
-          path: |
-            test-results.xml
-            coverage/
-          if-no-files-found: warn
-
-  # ---------------------------------------------------------------------------
-  # Job 2: Build — Docker image → Docker Hub CI Part
-  # ---------------------------------------------------------------------------
-  build:
-    name: Build & Push
-    needs: tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}  # from repo settings repository variables
-          password: ${{ secrets.DOCKERHUB_TOKEN }} # from repo settings repository secrets
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-  # ---------------------------------------------------------------------------
-  # Job 3: Deploy — app manifests only (Mongo/ns already on cluster)
-  # ---------------------------------------------------------------------------
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Configure kubeconfig auth with cluster credentials
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      - name: Update image tag in deployment
-        run: |
-          sed -i "s|image: ziyadtarek99/solar-system:.*|image: ziyadtarek99/solar-system:${{ github.sha }}|" \
-            kubernetes/0-deployment.yaml
-
-      - name: kubectl apply (app)
-        run: |
-          kubectl apply -f kubernetes/0-deployment.yaml
-          kubectl apply -f kubernetes/1-service.yaml
-          kubectl apply -f kubernetes/2-ingress.yaml
-          kubectl rollout status deployment/solar-system -n solar-system --timeout=180s
