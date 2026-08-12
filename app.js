@@ -67,6 +67,7 @@ app.get('/os',   function(req, res) {
     });
 })
 
+// liveness probe
 app.get('/live',   function(req, res) {
     res.setHeader('Content-Type', 'application/json');
     res.send({
@@ -74,6 +75,7 @@ app.get('/live',   function(req, res) {
     });
 })
 
+// readiness probe
 app.get('/ready',   function(req, res) {
     res.setHeader('Content-Type', 'application/json');
     res.send({
