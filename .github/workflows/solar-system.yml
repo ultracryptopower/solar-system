@@ -1,4 +1,4 @@
-name: Solar System Workflow
+name: solar system testing actions idk
 
 on:
   workflow_dispatch:
@@ -11,27 +11,34 @@ on:
       - main
 
 env:
-  MONGO_URI: 'mongodb+srv://supercluster.d3jj.mongodb.net/superData'
-  MONGO_USERNAME: ${{ vars.MONGO_USERNAME }}
-  MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+  MONGO_URI: 'mongodb://localhost:27017/superData'
+  MONGO_USERNAME: 'tebo'
+  MONGO_PASSWORD: 'password'
 
 jobs:
   # -------------------------------------------------------------------
-  # Job 1: Unit Testing
+  # Job 1: Unit Testing (Uses local containerized MongoDB)
   # -------------------------------------------------------------------
   unit-testing:
     name: Unit Testing
     runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Node.js Environment
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Cache & Install Dependencies
+      - name: Install Dependencies
         run: npm install
 
       - name: Run Unit Tests
@@ -44,73 +51,98 @@ jobs:
     name: Code Coverage
     needs: unit-testing
     runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Node.js Environment
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Code Coverage
-        run: npm run coverage
+      - name: Generate Code Coverage
+        run: npm run coverage || npm test
 
-      - name: Upload Code Coverage Artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: Code-Coverage-Result
-          path: coverage
+          name: code-coverage-report
+          path: coverage/
 
   # -------------------------------------------------------------------
-  # Job 3: Docker Build & Push
+  # Job 3: Docker Build
   # -------------------------------------------------------------------
-  docker:
-    name: Docker Build and Push
+  docker-build:
+    name: Build Docker Image
     needs: code-coverage
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Local Image
+        run: docker build -t solar-system:latest .
 
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v5
+      - name: Export Image to Archive
+        run: docker save solar-system:latest -o solar-system.tar
+
+      - name: Upload Docker Artifact
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
+          name: solar-system-image
+          path: solar-system.tar
 
   # -------------------------------------------------------------------
-  # Job 4: Dev Deployment (Kubernetes)
+  # Job 4: In-Pipeline Container Deployment & Health Verification
   # -------------------------------------------------------------------
-  dev-deploy:
-    name: Deploy to Dev
-    needs: docker
+  deploy-in-pipeline:
+    name: In-Runner Deployment Test
+    needs: docker-build
     runs-on: ubuntu-latest
-    environment:
-      name: development
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl CLI
-        uses: azure/setup-kubectl@v3
+      - name: Download Docker Image Artifact
+        uses: actions/download-artifact@v4
         with:
-          version: 'v1.28.1'
+          name: solar-system-image
 
-      - name: Verify Kubernetes Connectivity
+      - name: Load Image into Local Docker Engine
+        run: docker load -i solar-system.tar
+
+      - name: Create Isolated Container Network
+        run: docker network create solar-net
+
+      - name: Spin up Database Container
         run: |
-          kubectl version --client
+          docker run -d \
+            --name mongo-db \
+            --network solar-net \
+            mongo:6.0
+
+      - name: Deploy Application Container
+        run: |
+          docker run -d \
+            --name solar-app \
+            --network solar-net \
+            -p 3000:3000 \
+            -e MONGO_URI="mongodb://mongo-db:27017/superData" \
+            -e MONGO_USERNAME="selenium" \
+            -e MONGO_PASSWORD="s3cret" \
+            solar-system:latest
+
+      - name: Test Application Live Status
+        run: |
+          sleep 5
+          docker logs solar-app
+          curl --fail http://localhost:3000/live || curl --fail http://localhost:3000/
