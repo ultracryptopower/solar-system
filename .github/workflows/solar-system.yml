@@ -11,7 +11,8 @@ on:
       - main
 
 env:
-  MONGO_URI: 'mongodb://localhost:27017/superData'
+  # FIX 1: Added ?authSource=admin so Node.js checks the correct database for the user
+  MONGO_URI: 'mongodb://localhost:27017/superData?authSource=admin'
   MONGO_USERNAME: 'tebo'
   MONGO_PASSWORD: 'password'
 
@@ -28,6 +29,11 @@ jobs:
         image: mongo:6.0
         ports:
           - 27017:27017
+        # FIX 2: Added the initialization environment variables to Job 1
+        env:
+          MONGO_INITDB_ROOT_USERNAME: 'tebo'
+          MONGO_INITDB_ROOT_PASSWORD: 'password'
+          MONGO_INITDB_DATABASE: 'superData'
 
     steps:
       - name: Checkout Code
@@ -128,21 +134,26 @@ jobs:
         run: docker network create solar-net
 
       - name: Spin up Database Container
+        # FIX 3: Added root user initialization to the docker run command
         run: |
           docker run -d \
             --name mongo-db \
             --network solar-net \
+            -e MONGO_INITDB_ROOT_USERNAME="tebo" \
+            -e MONGO_INITDB_ROOT_PASSWORD="password" \
+            -e MONGO_INITDB_DATABASE="superData" \
             mongo:6.0
 
       - name: Deploy Application Container
+        # FIX 4: Updated to use 'tebo', 'password', and authSource=admin
         run: |
           docker run -d \
             --name solar-app \
             --network solar-net \
             -p 3000:3000 \
-            -e MONGO_URI="mongodb://mongo-db:27017/superData" \
-            -e MONGO_USERNAME="selenium" \
-            -e MONGO_PASSWORD="s3cret" \
+            -e MONGO_URI="mongodb://mongo-db:27017/superData?authSource=admin" \
+            -e MONGO_USERNAME="tebo" \
+            -e MONGO_PASSWORD="password" \
             solar-system:latest
 
       - name: Test Application Live Status
