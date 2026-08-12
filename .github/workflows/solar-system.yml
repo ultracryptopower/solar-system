@@ -18,13 +18,13 @@ name: Solar System CI/CD
 on:
 
   workflow_dispatch:
-  # push:
-  #   branches:
-  #     - main
-  #   paths-ignore:
-  #     - README.md
-  #     - .github/**
-  #     - .gitignore
+   push:
+     branches:
+       - main
+     paths-ignore:
+       - README.md
+       - .github/**
+       - .gitignore
 
 # workflow variables
 env:
