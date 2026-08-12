@@ -11,7 +11,6 @@ on:
       - main
 
 env:
-  # FIX 1: Added ?authSource=admin so Node.js checks the correct database for the user
   MONGO_URI: 'mongodb://localhost:27017/superData?authSource=admin'
   MONGO_USERNAME: 'tebo'
   MONGO_PASSWORD: 'password'
@@ -53,7 +52,7 @@ jobs:
 
       - name: Seed MongoDB
         run: |
-          docker exec -i $(docker ps -q --filter ancestor=mongo:6.0) mongosh "mongodb://tebo:password@localhost:27017/superData?authSource=admin" --eval '
+          docker exec -i $(docker ps -q --filter ancestor=mongo:6.0) mongosh "mongodb://tebo:password@127.0.0.1:27017/superData?authSource=admin" --eval '
             db.planets.insertMany([
               { id: 1, name: "Mercury" },
               { id: 2, name: "Venus" },
@@ -63,7 +62,7 @@ jobs:
               { id: 6, name: "Satrun" },
               { id: 7, name: "Uranus" },
               { id: 8, name: "Neptune" }
-            ])
+            ]);
           '
 
       - name: Run Unit Tests
@@ -72,9 +71,6 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/superData?authSource=admin
           MONGO_USERNAME: tebo
           MONGO_PASSWORD: password
-        # Override reporter to 'spec' so failing assertions print directly in GitHub Actions logs
-        - name: Run Unit Tests
-          run: npx mocha app-test.js --timeout 10000 --reporter spec --exit
 
   # -------------------------------------------------------------------
   # Job 2: Code Coverage
@@ -93,6 +89,11 @@ jobs:
           MONGO_INITDB_ROOT_USERNAME: 'tebo'
           MONGO_INITDB_ROOT_PASSWORD: 'password'
           MONGO_INITDB_DATABASE: 'superData'
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok' --quiet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout Code
@@ -106,8 +107,27 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Seed MongoDB
+        run: |
+          docker exec -i $(docker ps -q --filter ancestor=mongo:6.0) mongosh "mongodb://tebo:password@127.0.0.1:27017/superData?authSource=admin" --eval '
+            db.planets.insertMany([
+              { id: 1, name: "Mercury" },
+              { id: 2, name: "Venus" },
+              { id: 3, name: "Earth" },
+              { id: 4, name: "Mars" },
+              { id: 5, name: "Jupiter" },
+              { id: 6, name: "Satrun" },
+              { id: 7, name: "Uranus" },
+              { id: 8, name: "Neptune" }
+            ]);
+          '
+
       - name: Generate Code Coverage
         run: npm run coverage || npm test
+        env:
+          MONGO_URI: mongodb://localhost:27017/superData?authSource=admin
+          MONGO_USERNAME: tebo
+          MONGO_PASSWORD: password
 
       - name: Upload Coverage Artifact
         uses: actions/upload-artifact@v4
@@ -160,7 +180,6 @@ jobs:
         run: docker network create solar-net
 
       - name: Spin up Database Container
-        # FIX 3: Added root user initialization to the docker run command
         run: |
           docker run -d \
             --name mongo-db \
@@ -170,8 +189,23 @@ jobs:
             -e MONGO_INITDB_DATABASE="superData" \
             mongo:6.0
 
+      - name: Seed Containerized Database
+        run: |
+          sleep 3
+          docker exec -i mongo-db mongosh "mongodb://tebo:password@127.0.0.1:27017/superData?authSource=admin" --eval '
+            db.planets.insertMany([
+              { id: 1, name: "Mercury" },
+              { id: 2, name: "Venus" },
+              { id: 3, name: "Earth" },
+              { id: 4, name: "Mars" },
+              { id: 5, name: "Jupiter" },
+              { id: 6, name: "Satrun" },
+              { id: 7, name: "Uranus" },
+              { id: 8, name: "Neptune" }
+            ]);
+          '
+
       - name: Deploy Application Container
-        # FIX 4: Updated to use 'tebo', 'password', and authSource=admin
         run: |
           docker run -d \
             --name solar-app \
