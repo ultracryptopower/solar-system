@@ -25,6 +25,7 @@ on:
   #     - .github/**
   #     - .gitignore
 
+
 env:
   IMAGE_NAME: ziyadtarek99/solar-system
   MONGO_URI: mongodb://localhost:27017/solar-system?authSource=admin
