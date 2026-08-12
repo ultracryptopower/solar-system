@@ -50,10 +50,30 @@ jobs:
 
       - name: Install Dependencies
         run: npm install
+      - name: Seed MongoDB
+      run: |
+        docker exec -i $(docker ps -q --filter ancestor=mongo:6.0) mongosh "mongodb://tebo:password@localhost:27017/superData?authSource=admin" --eval '
+          db.planets.insertMany([
+            { id: 1, name: "Mercury" },
+            { id: 2, name: "Venus" },
+            { id: 3, name: "Earth" },
+            { id: 4, name: "Mars" },
+            { id: 5, name: "Jupiter" },
+            { id: 6, name: "Satrun" },
+            { id: 7, name: "Uranus" },
+            { id: 8, name: "Neptune" }
+          ])
+        '
 
-      # Override reporter to 'spec' so failing assertions print directly in GitHub Actions logs
       - name: Run Unit Tests
         run: npx mocha app-test.js --timeout 10000 --reporter spec --exit
+        env:
+          MONGO_URI: mongodb://localhost:27017/superData?authSource=admin
+          MONGO_USERNAME: tebo
+          MONGO_PASSWORD: password
+        # Override reporter to 'spec' so failing assertions print directly in GitHub Actions logs
+        - name: Run Unit Tests
+          run: npx mocha app-test.js --timeout 10000 --reporter spec --exit
 
   # -------------------------------------------------------------------
   # Job 2: Code Coverage
